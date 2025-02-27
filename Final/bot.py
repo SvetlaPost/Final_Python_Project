@@ -1,84 +1,77 @@
+
 import os
-from telegram import Update
-from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext
+from idlelib.undo import Command
+
+from aiogram.types import BotCommand
+from dotenv import load_dotenv
+import logging
+
+from aiogram import Bot, Dispatcher, types
+from aiogram.fsm.storage.memory import MemoryStorage
+from aiogram import Router
+
 from query_handler import QueryHandler
 
-from dotenv import load_dotenv
+
 load_dotenv()
+API_TOKEN = os.getenv("TELEGRAM_TOKEN")
 
-TOKEN = os.getenv('TELEGRAM_API_TOKEN')
+# Настройка логирования
+logging.basicConfig(level=logging.INFO)
 
-# Инициалинициализируем
-query_handler = QueryHandler()
+# Инициализация бота и диспетчера
+#storage = MemoryStorage()
+bot = Bot(token=API_TOKEN)
+dp = Dispatcher()
 
-#/start
-def start(update: Update, context: CallbackContext) -> None:
-    update.message.reply_text(
-        "Привет! Я твой бот для поиска фильмов. Используй команды:\n"
-        "/search - поиск по ключевому слову\n"
-        "/search_by_genre_year - поиск по жанру и году\n"
-        "/popular_queries - популярные запросы"
-    )
+query_handler = QueryHandler(use_sqlite=True, db_file='/Users/svetlanapostel/PycharmProjects/FilmFinder/db.sqlite3')
 
-# search по ключевому слову
-def search(update: Update, context: CallbackContext) -> None:
-    if context.args:
-        keyword = " ".join(context.args)
-        results = query_handler.search_movies_by_keyword(keyword)
-        if results:
-            message = "\n".join([f"Название: {movie['title']}, Год: {movie['year']}" for movie in results])
-        else:
-            message = "Фильмы по запросу не найдены."
-        update.message.reply_text(message)
+@dp.message(BotCommand(command="start", description="test"))
+async def start_command(message: types.Message):
+    await message.reply("Добро пожаловать! Используйте команды:\n"
+                        "/search - поиск по ключевому слову\n"
+                        "/search_by_genre_year - поиск по жанру и году\n"
+                        "/popular_queries - популярные запросы")
+
+@dp.message(['search'])
+async def search_command(message: types.Message):
+    # Предположим, что пользователь вводит ключевое слово после команды
+    keyword = message.get_args()
+    if not keyword:
+        await message.reply("Пожалуйста, укажите ключевое слово для поиска.")
+        return
+    movies = query_handler.search_movies_by_keyword(keyword)
+    if movies:
+        response = "\n".join([f"{movie['title']} ({movie['release_year']})" for movie in movies])
     else:
-        update.message.reply_text("Пожалуйста, укажите ключевое слово для поиска.")
+        response = "Фильмы не найдены."
+    await message.reply(response)
 
-# search_by_genre_year по жанре и году
-def search_by_genre_year(update: Update, context: CallbackContext) -> None:
-    if len(context.args) == 2:
-        genre = context.args[0]
-        year = context.args[1]
-        results = query_handler.search_movies_by_genre_and_year(genre, year)
-        if results:
-            message = "\n".join([f"Название: {movie['title']}, Год: {movie['year']}" for movie in results])
-        else:
-            message = "Фильмы по жанру и году не найдены."
-        update.message.reply_text(message)
+@dp.message(['search_by_genre_year'])
+async def search_by_genre_year_command(message: types.Message):
+    args = message.get_args().split(',')
+    if len(args) != 2:
+        await message.reply("Пожалуйста, укажите жанр и год в формате: жанр,год.")
+        return
+    genre, year = args
+    movies = query_handler.search_movies_by_genre_and_year(genre.strip(), year.strip())
+    if movies:
+        response = "\n".join([f"{movie['title']} ({movie['release_year']})" for movie in movies])
     else:
-        update.message.reply_text("Пожалуйста, укажите жанр и год (например, /search_by_genre_year Comedy 2022).")
+        response = "Фильмы не найдены."
+    await message.reply(response)
 
-# popular_queries
-def popular_queries(update: Update, context: CallbackContext) -> None:
-    results = query_handler.get_popular_searches()
-    if results:
-        message = "\n".join([f"Запрос: {result['query_text']}, Частота: {result['search_count']}" for result in results])
+@dp.message(['popular_queries'])
+async def popular_queries_command(message: types.Message):
+    popular_queries = query_handler.get_popular_searches()
+    if popular_queries:
+        response = "\n".join([f"{query[0]} (поисков: {query[1]})" for query in popular_queries])
     else:
-        message = "Популярные запросы не найдены."
-    update.message.reply_text(message)
-
-# запуск
-def main() -> None:
-    # Получаем токен, который был выдан BotFather
-    TELEGRAM_API_TOKEN = os.getenv("TELEGRAM_API_TOKEN")
-
-    # Созд-е объекта Updater
-    updater = Updater(TELEGRAM_API_TOKEN)
-
-    # Регистрируем обработчиков команд
-    updater.dispatcher.add_handler(CommandHandler("start", start))
-    updater.dispatcher.add_handler(CommandHandler("search", search))
-    updater.dispatcher.add_handler(CommandHandler("search_by_genre_year", search_by_genre_year))
-    updater.dispatcher.add_handler(CommandHandler("popular_queries", popular_queries))
-
-    # Запускаем бота
-    updater.start_polling()
-
-    # Ожидаем завершения работы
-    updater.idle()
+        response = "Нет популярных запросов."
+    await message.reply(response)
 
 if __name__ == '__main__':
-    main()
+    import asyncio
 
-  # запуск python my_telegram_bot.py Перейдите в Telegram и найдите своего бота по username.
-# Напишите команду /start, и бот должен ответить сообщением.
-
+    # Запуск бота с помощью asyncio
+    asyncio.run(dp.start_polling())
