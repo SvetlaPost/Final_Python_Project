@@ -27,22 +27,22 @@ query_handler = QueryHandler()
 
 class SearchState(StatesGroup):
     waiting_for_keyword = State()
+    waiting_for_genre_year = State()
+
 
 @dp.message(Command(commands=["search"]))
-async def search_command(message:types.Message, state: FSMContext ):
+async def search_command(message: types.Message, state: FSMContext):
     await message.reply("Пожалуйста, укажите ключевое слово для поиска.")
     await state.set_state(SearchState.waiting_for_keyword)
 
 
-
-
-
-@dp.message(Command(commands="start"))
+@dp.message(Command(commands=["start"]))
 async def start_command(message: types.Message):
-    await message.reply("Добро пожаловать! Используйте команды:\n"
+    await message.reply("Добро пожаловать в FilmFinder! Используйте команды:\n"
                         "/search - поиск по ключевому слову\n"
-                        "/search_by_genre_year - поиск по жанру и году\n"
+                        "/search_by_genre_year <жанр> <год> - поиск по жанру и году\n"
                         "/popular_queries - популярные запросы")
+
 
 @dp.message(SearchState.waiting_for_keyword)
 async def process_search_keyword(message: types.Message, state: FSMContext):
@@ -59,30 +59,44 @@ async def process_search_keyword(message: types.Message, state: FSMContext):
     await message.reply(response)
     await state.clear()
 
-@dp.message(Command(commands=['search_by_genre_year']))
-async def search_by_genre_year_command(message: types.Message):
-    args = message.get_args().split(',')
-    if len(args) != 2:
-        await message.reply("Пожалуйста, укажите жанр и год в формате: жанр,год.")
+
+@dp.message(Command(commands=["search_by_genre_year"]))
+async def search_by_genre_year_command(message: types.Message, state: FSMContext):
+    await message.reply("Пожалуйста, укажите жанр и год в формате: жанр год")
+    await state.set_state(SearchState.waiting_for_genre_year)
+
+
+@dp.message(SearchState.waiting_for_genre_year)
+async def process_genre_year(message: types.Message, state: FSMContext):
+    data = message.text.split()
+    if len(data) != 2:
+        await message.reply("Неправильный формат. Пожалуйста, укажите жанр и год в формате: жанр год")
         return
-    genre, year = args
+
+    genre, year = data[0], data[1]
     movies = query_handler.search_movies_by_genre_and_year(genre.strip(), year.strip())
+
     if movies:
         response = "\n".join([f"{movie['title']} ({movie['release_year']})" for movie in movies])
     else:
         response = "Фильмы не найдены."
-    await message.reply(response)
 
-@dp.message(Command(commands=['popular_queries']))
+    await message.reply(response)
+    await state.clear()
+
+
+@dp.message(Command(commands=["popular_queries"]))
 async def popular_queries_command(message: types.Message):
     popular_queries = query_handler.get_popular_searches()
     if popular_queries:
-        response = "\n".join([f"{query[0]} (поисков: {query[1]})" for query in popular_queries])
+        response = "Популярные запросы:\n" + "\n".join(
+            [f"{query[0]} (поисков: {query[1]})" for query in popular_queries])
     else:
         response = "Нет популярных запросов."
     await message.reply(response)
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     import asyncio
 
     # Запуск бота с помощью asyncio
