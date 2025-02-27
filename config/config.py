@@ -11,3 +11,5 @@ DB_CONFIG = {
     "database": os.getenv("DB_NAME"),
     "charset": os.getenv("DB_CHARSET"),
 }
+
+API_TOKEN=os.getenv("TELEGRAM_TOKEN")

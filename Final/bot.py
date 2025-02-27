@@ -1,14 +1,14 @@
 
 import os
-from idlelib.undo import Command
 
-from aiogram.types import BotCommand
 from dotenv import load_dotenv
 import logging
 
 from aiogram import Bot, Dispatcher, types
+from aiogram.filters import Command
 from aiogram.fsm.storage.memory import MemoryStorage
-from aiogram import Router
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
 
 from query_handler import QueryHandler
 
@@ -19,35 +19,47 @@ API_TOKEN = os.getenv("TELEGRAM_TOKEN")
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
 
-# Инициализация бота и диспетчера
-#storage = MemoryStorage()
+
 bot = Bot(token=API_TOKEN)
-dp = Dispatcher()
+dp = Dispatcher(storage=MemoryStorage())
 
-query_handler = QueryHandler(use_sqlite=True, db_file='/Users/svetlanapostel/PycharmProjects/FilmFinder/db.sqlite3')
+query_handler = QueryHandler()
 
-@dp.message(BotCommand(command="start", description="test"))
+class SearchState(StatesGroup):
+    waiting_for_keyword = State()
+
+@dp.message(Command(commands=["search"]))
+async def search_command(message:types.Message, state: FSMContext ):
+    await message.reply("Пожалуйста, укажите ключевое слово для поиска.")
+    await state.set_state(SearchState.waiting_for_keyword)
+
+
+
+
+
+@dp.message(Command(commands="start"))
 async def start_command(message: types.Message):
     await message.reply("Добро пожаловать! Используйте команды:\n"
                         "/search - поиск по ключевому слову\n"
                         "/search_by_genre_year - поиск по жанру и году\n"
                         "/popular_queries - популярные запросы")
 
-@dp.message(['search'])
-async def search_command(message: types.Message):
-    # Предположим, что пользователь вводит ключевое слово после команды
-    keyword = message.get_args()
+@dp.message(SearchState.waiting_for_keyword)
+async def process_search_keyword(message: types.Message, state: FSMContext):
+    keyword = message.text.strip()
     if not keyword:
-        await message.reply("Пожалуйста, укажите ключевое слово для поиска.")
+        await message.reply("Ввели пустое сообщение, попробуйте снова")
         return
+
     movies = query_handler.search_movies_by_keyword(keyword)
     if movies:
         response = "\n".join([f"{movie['title']} ({movie['release_year']})" for movie in movies])
     else:
         response = "Фильмы не найдены."
     await message.reply(response)
+    await state.clear()
 
-@dp.message(['search_by_genre_year'])
+@dp.message(Command(commands=['search_by_genre_year']))
 async def search_by_genre_year_command(message: types.Message):
     args = message.get_args().split(',')
     if len(args) != 2:
@@ -61,7 +73,7 @@ async def search_by_genre_year_command(message: types.Message):
         response = "Фильмы не найдены."
     await message.reply(response)
 
-@dp.message(['popular_queries'])
+@dp.message(Command(commands=['popular_queries']))
 async def popular_queries_command(message: types.Message):
     popular_queries = query_handler.get_popular_searches()
     if popular_queries:
@@ -74,4 +86,4 @@ if __name__ == '__main__':
     import asyncio
 
     # Запуск бота с помощью asyncio
-    asyncio.run(dp.start_polling())
+    asyncio.run(dp.start_polling(bot))
